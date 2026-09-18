@@ -386,6 +386,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
 # shellcheck source=bin/fm-backlog-transition-lib.sh
 . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
+# shellcheck source=bin/fm-tools-path-lib.sh
+. "$SCRIPT_DIR/fm-tools-path-lib.sh"
 
 resolve_directory_input() {
   local name=$1 path=$2 resolved raw_bytes
@@ -418,6 +420,10 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+# Resolve this home's optional config/tools helpers here, before any harness or
+# backend executable resolution below and before the backend session server is
+# started, so everything this spawn resolves or starts sees the corrected PATH.
+fm_tools_path_prepend "$CONFIG"
 # shellcheck source=bin/fm-config-inherit-lib.sh
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
 if ! LAUNCH_ENV_ENABLED=$(fm_config_source_present "$CONFIG/launch-env-allowlist"); then
@@ -3251,6 +3257,13 @@ spawn_send_key() { # <target> <key>
   cmux) fm_backend_cmux_send_key "$1" "$2" "$W" ;;
   esac
 }
+PANE_TOOLS_PATH=$(fm_tools_path_prefix "$CONFIG")
+if [ -n "$PANE_TOOLS_PATH" ]; then
+  # Expand PATH in the destination pane, not here. Its long-lived backend may
+  # have a different toolchain from the launcher, and only the home-local
+  # helper prefix belongs ahead of that existing value.
+  spawn_send_text_line "$WT_TARGET" "export PATH=$(shell_quote "$PANE_TOOLS_PATH")\${PATH:+:\$PATH}"
+fi
 
 kimi_capture() {
   fm_backend_capture "$BACKEND" "$T" 120 "$W" 2>/dev/null || true

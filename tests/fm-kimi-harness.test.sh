@@ -191,13 +191,14 @@ EOF
 }
 
 test_kimi_launch_then_send_is_verified() {
-  local id rec out rc launch pointer brief_real meta task_tmp
+  local id rec out rc launch pointer brief_real meta task_tmp path_export path_line first_send_line treehouse_line
   id="kimi-success-z1-$$"
   task_tmp="/tmp/fm-$id"
   KIMI_RUNTIME_TASK_TMP=$task_tmp
   rm -rf "$task_tmp"
   rec=$(make_spawn_case success "$id")
   read_spawn_record "$rec"
+  mkdir -p "$HOME_DIR/config/tools/bin" "$HOME_DIR/config/tools/node_modules/.bin"
   out=$(FM_FAKE_KIMI_SWALLOW_FIRST=yes run_spawn \
     "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
     --model kimi-code/k3 --effort high)
@@ -223,6 +224,20 @@ test_kimi_launch_then_send_is_verified() {
   assert_present "$task_tmp/gotmp" "kimi spawn did not create its Go temp directory"
   assert_grep "export GOTMPDIR=$task_tmp/gotmp" "$CASE_DIR/tmux-calls.log" \
     "kimi spawn did not export its Go temp directory into the pane"
+  path_export="export PATH='$HOME_DIR/config/tools/bin:$HOME_DIR/config/tools/node_modules/.bin'\${PATH:+:\$PATH}"
+  assert_grep "$path_export" \
+    "$CASE_DIR/tmux-calls.log" \
+    "kimi spawn did not prepend its home-local helper directories to the pane PATH"
+  assert_not_contains "$path_export" "$FAKEBIN_DIR" \
+    "kimi spawn copied the launcher fakebin into the pane PATH export"
+  assert_not_contains "$path_export" "$BASE_PATH" \
+    "kimi spawn copied the launcher base PATH into the pane PATH export"
+  path_line=$(grep -n "export PATH=" "$CASE_DIR/tmux-calls.log" | head -1 | cut -d: -f1)
+  first_send_line=$(grep -n "send-keys" "$CASE_DIR/tmux-calls.log" | head -1 | cut -d: -f1)
+  treehouse_line=$(grep -n "treehouse get" "$CASE_DIR/tmux-calls.log" | head -1 | cut -d: -f1)
+  [ -n "$path_line" ] && [ "$path_line" = "$first_send_line" ] && \
+    [ -n "$treehouse_line" ] && [ "$path_line" -lt "$treehouse_line" ] \
+    || fail "kimi spawn did not export its resolved PATH before the first pane helper command"
   assert_grep "export FM_TASK_ID=$id" "$CASE_DIR/tmux-calls.log" \
     "kimi spawn did not mark the pane with its task id"
   assert_grep 'BEGIN FIRSTMATE KIMI TURN-END HOOK' "$HOME_DIR/.kimi-code/config.toml" \
@@ -230,6 +245,19 @@ test_kimi_launch_then_send_is_verified() {
   assert_grep 'token=' "$WT_DIR/.fm-kimi-turnend" "kimi spawn did not write its token pointer"
   assert_present "$HOME_DIR/state/$id.kimi-turnend-token" "kimi spawn did not record its token"
   pass "fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token"
+}
+
+test_kimi_spawn_preserves_pane_path_without_home_local_tools() {
+  local id rec out rc
+  id="kimi-path-absent-z12-$$"
+  rec=$(make_spawn_case path-absent "$id")
+  read_spawn_record "$rec"
+  out=$(run_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id")
+  rc=$?
+  expect_code 0 "$rc" "Kimi spawn without home-local tools should succeed"
+  assert_no_grep "export PATH=" "$CASE_DIR/tmux-calls.log" \
+    "kimi spawn changed the destination pane PATH without home-local helper directories"
+  pass "fm-spawn: absent home-local tools leave the destination pane PATH untouched"
 }
 
 test_kimi_hook_install_is_surgical_idempotent_and_removable() {
@@ -686,6 +714,7 @@ test_kimi_hook_remove_preserves_owned_newline_boundary
 test_kimi_hook_fails_closed_on_missing_malformed_or_partial_config
 test_kimi_hook_install_refuses_without_jq
 test_kimi_launch_then_send_is_verified
+test_kimi_spawn_preserves_pane_path_without_home_local_tools
 test_kimi_hook_is_silent_and_requires_registered_workspace_token
 test_kimi_spawn_refuses_unsafe_global_config_before_pane_creation
 test_kimi_teardown_removes_pointer_and_registry_token
