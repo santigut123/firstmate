@@ -3257,7 +3257,13 @@ spawn_send_key() { # <target> <key>
   cmux) fm_backend_cmux_send_key "$1" "$2" "$W" ;;
   esac
 }
-spawn_send_text_line "$WT_TARGET" "export PATH=$(shell_quote "$PATH")"
+PANE_TOOLS_PATH=$(fm_tools_path_prefix "$CONFIG")
+if [ -n "$PANE_TOOLS_PATH" ]; then
+  # Expand PATH in the destination pane, not here. Its long-lived backend may
+  # have a different toolchain from the launcher, and only the home-local
+  # helper prefix belongs ahead of that existing value.
+  spawn_send_text_line "$WT_TARGET" "export PATH=$(shell_quote "$PANE_TOOLS_PATH")\${PATH:+:\$PATH}"
+fi
 
 kimi_capture() {
   fm_backend_capture "$BACKEND" "$T" 120 "$W" 2>/dev/null || true
